@@ -134,8 +134,19 @@ async function main() {
   await testConcurrentSameSpot();
   await testConcurrentRaisesSameCat();
 
-  // Limpieza: los ejemplares de prueba no se quedan en el catálogo.
+  /*
+    Limpieza. Los ejemplares de prueba no se quedan en el catálogo, y el
+    libro de webhooks tampoco: es a prueba de reenvíos justamente porque
+    nunca se borra, así que cada corrida iría dejando sedimento.
+
+    Solo se tocan los eventos de este script. Los reales llevan el
+    `webhook-id` de Standard Webhooks —un UUID— o `order_paid_<id>`;
+    ninguno empieza con `evt_`.
+  */
   await prisma.cat.deleteMany({ where: { slug: { startsWith: "prueba-" } } });
+  await prisma.processedWebhook.deleteMany({
+    where: { eventId: { startsWith: "evt_" } },
+  });
   console.log(`\n${failures === 0 ? "TODO OK" : `${failures} VERIFICACIONES FALLARON`}`);
   await prisma.$disconnect();
   process.exit(failures === 0 ? 0 : 1);
