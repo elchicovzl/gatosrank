@@ -22,6 +22,15 @@ function remoteImageHosts() {
 }
 
 const nextConfig: NextConfig = {
+  /*
+    Las fuentes de la imagen OG se leen con `readFile` y una ruta armada en
+    runtime, así que el empaquetador no las detecta y no las sube. Sin esto,
+    la imagen OG falla en producción con "no such file" — y es justo la
+    pieza que se comparte.
+  */
+  outputFileTracingIncludes: {
+    "/[lang]/gato/[slug]/opengraph-image": ["./assets/fonts/**"],
+  },
   images: {
     remotePatterns: remoteImageHosts(),
     formats: ["image/avif", "image/webp"],

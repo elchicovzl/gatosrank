@@ -16,7 +16,9 @@
     "check:bids": "tsx scripts/check-bidding.ts",
     "postinstall": "prisma generate",
     "check:webhook": "tsx scripts/check-webhook.ts",
-    "check:tokens": "tsx scripts/check-tokens.ts"
+    "check:tokens": "tsx scripts/check-tokens.ts",
+    "check:env": "tsx scripts/check-env.ts",
+    "check:webhook:polar": "tsx scripts/check-webhook-polar.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1116.0",
@@ -41,6 +43,7 @@
     "dotenv": "^17.4.2",
     "eslint": "^9",
     "eslint-config-next": "16.3.2",
+    "standardwebhooks": "^1.0.0",
     "tailwindcss": "^4",
     "tsx": "^4.23.12",
     "typescript": "^5"
