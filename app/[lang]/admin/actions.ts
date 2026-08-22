@@ -121,14 +121,26 @@ export async function purgePhoto(catId: string): Promise<void> {
   });
   if (!cat) return;
 
-  await deleteImage(cat.imageKey).catch(() => {
-    // Si el objeto ya no está, el resultado es el mismo.
-  });
-
+  /*
+    El estado va primero: aunque después falle algo, el ejemplar ya salió
+    del tablero. Al revés no: dejaríamos una fila visible apuntando a una
+    foto borrada.
+  */
   await prisma.cat.update({
     where: { id: catId },
     data: { status: "REMOVED", imageKey: "" },
   });
-
   refresh();
+
+  /*
+    Sin `catch`. Antes se tragaba cualquier error acá, y eso convertía una
+    baja fallida en una baja aparentemente exitosa. Borrar la foto incluye
+    sacarla del caché de borde; si cualquiera de los dos pasos falla, la
+    imagen sigue siendo accesible por su URL y quien dio de baja tiene que
+    enterarse AHORA, no cuando alguien se la muestre.
+
+    Borrar dos veces es inofensivo: S3 responde bien aunque la key ya no
+    esté, y purgar algo que no está cacheado tampoco es error.
+  */
+  await deleteImage(cat.imageKey);
 }

@@ -34,6 +34,8 @@ const VARIABLES: Variable[] = [
   { nombre: "R2_SECRET_ACCESS_KEY", nivel: "produccion" },
   { nombre: "R2_BUCKET", nivel: "produccion" },
   { nombre: "R2_PUBLIC_URL", nivel: "produccion", publica: true },
+  { nombre: "CLOUDFLARE_ZONE_ID", nivel: "produccion" },
+  { nombre: "CLOUDFLARE_API_TOKEN", nivel: "produccion" },
   { nombre: "MODERATION_PROVIDER", nivel: "obligatoria", publica: true },
   { nombre: "SIGHTENGINE_USER", nivel: "produccion" },
   { nombre: "SIGHTENGINE_SECRET", nivel: "produccion" },
@@ -114,6 +116,27 @@ if (esPooler && !process.env.DIRECT_URL?.trim()) {
   problemas.push(
     "DATABASE_URL parece un pooler y falta DIRECT_URL: las migraciones van a fallar",
   );
+}
+
+/*
+  Con dominio propio, el CDN de Cloudflare queda delante del bucket y guarda
+  copias por un año (subimos con `immutable`). Sin credenciales de purga,
+  borrar la foto la saca del bucket y el borde la sigue sirviendo: la baja
+  de contenido indebido y la promesa de privacidad quedan sin efecto.
+  El dominio de desarrollo *.r2.dev va directo al bucket y no necesita esto.
+*/
+const publicUrl = process.env.R2_PUBLIC_URL?.trim();
+if (publicUrl) {
+  const conCdn = !/\.r2\.dev$/i.test(new URL(publicUrl).hostname);
+  const puedePurgar = Boolean(
+    process.env.CLOUDFLARE_ZONE_ID && process.env.CLOUDFLARE_API_TOKEN,
+  );
+  if (conCdn && !puedePurgar) {
+    problemas.push(
+      "R2_PUBLIC_URL usa un dominio con CDN y faltan CLOUDFLARE_ZONE_ID/" +
+        "CLOUDFLARE_API_TOKEN: borrar una foto no la saca del caché de borde",
+    );
+  }
 }
 
 if (process.env.ADMIN_TOKEN?.trim() === "dev-token-cambiame") {

@@ -9,6 +9,9 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 
+import { purgeFromCdn, servedThroughCdn } from "@/lib/cdn-purge";
+import { imageUrl } from "@/lib/images";
+
 /**
  * Almacenamiento de imágenes.
  *
@@ -84,6 +87,14 @@ export async function deleteImage(key: string): Promise<void> {
     await r2().send(
       new DeleteObjectCommand({ Bucket: process.env.R2_BUCKET, Key: key }),
     );
+
+    /*
+      Con dominio propio hay caché de borde delante del bucket, y sacarlo
+      de uno sin sacarlo del otro deja la foto accesible por su URL. Va
+      después del borrado a propósito: si purgáramos primero, cualquier
+      pedido en el medio volvería a cachear el objeto que aún existe.
+    */
+    if (servedThroughCdn()) await purgeFromCdn([imageUrl(key)]);
     return;
   }
 

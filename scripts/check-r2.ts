@@ -52,6 +52,7 @@ interface Probe {
   status: number;
   type: string | null;
   cache: string | null;
+  cfCache: string | null;
 }
 
 async function probe(url: string): Promise<Probe> {
@@ -60,7 +61,44 @@ async function probe(url: string): Promise<Probe> {
     status: res.status,
     type: res.headers.get("content-type"),
     cache: res.headers.get("cache-control"),
+    cfCache: res.headers.get("cf-cache-status"),
   };
+}
+
+/*
+  Purga por URL contra la API de Cloudflare. Se replica acá en vez de usar
+  lib/cdn-purge.ts por la misma razón que el cliente S3: ese módulo declara
+  "server-only" y sólo resuelve dentro del empaquetador de Next.
+*/
+async function purgar(target: string): Promise<void> {
+  const zone = required("CLOUDFLARE_ZONE_ID");
+  const token = required("CLOUDFLARE_API_TOKEN");
+
+  const res = await fetch(
+    `https://api.cloudflare.com/client/v4/zones/${zone}/purge_cache`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ files: [target] }),
+    },
+  );
+
+  const body = (await res.json().catch(() => null)) as
+    | { success: boolean; errors?: { code: number; message: string }[] }
+    | null;
+
+  if (!res.ok || !body?.success) {
+    const detalle =
+      body?.errors?.map((e) => `${e.code} ${e.message}`).join("; ") ??
+      `HTTP ${res.status}`;
+    throw new Error(`La purga del CDN falló: ${detalle}`);
+  }
+
+  /* La purga se propaga por los bordes; sin esta pausa el sondeo llega antes. */
+  await new Promise((r) => setTimeout(r, 3000));
 }
 
 function required(name: string): string {
@@ -84,8 +122,11 @@ async function main(): Promise<void> {
     );
   }
 
+  const conCdn = !/\.r2\.dev$/i.test(new URL(publicUrl).hostname);
+
   const url = imageUrl(KEY);
   console.log(`bucket   ${bucket}`);
+  console.log(`CDN      ${conCdn ? "sí (dominio propio, cachea)" : "no (*.r2.dev, directo)"}`);
   console.log(`URL      ${url}\n`);
 
   const client = r2();
@@ -130,10 +171,27 @@ async function main(): Promise<void> {
     await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: KEY }));
   }
 
+  console.log("3. borrando del bucket y del caché de borde");
+  if (conCdn) await purgar(url);
   const gone = await probe(url);
-  console.log(`3. borrado · status ${gone.status}\n`);
+  console.log(`   status ${gone.status} · cf-cache-status ${gone.cfCache}`);
 
-  console.log("Circuito de imágenes OK: sube, se lee público, se borra.");
+  /*
+    Este es el paso que de verdad importa. Con dominio propio el objeto
+    borrado sigue en el borde con un año de vida, así que un 200 acá
+    significa que dar de baja una foto indebida no la saca de internet
+    y que la promesa de la página de privacidad no se cumple.
+  */
+  if (gone.status === 200) {
+    throw new Error(
+      "El objeto se borró del bucket pero el CDN lo sigue sirviendo.\n" +
+        "  Borrar una foto no la saca de internet: la baja de contenido\n" +
+        "  indebido y la promesa de privacidad quedan sin efecto.",
+    );
+  }
+  console.log("   ✓ fuera del bucket y del caché\n");
+
+  console.log("Circuito de imágenes OK: sube, se lee público, se borra de verdad.");
 }
 
 main().catch((error: unknown) => {
