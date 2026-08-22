@@ -26,16 +26,39 @@ export interface LiveStats {
   visitors: number;
 }
 
+/** Lo que se muestra cuando todavía no hay datos: vos, mirando. */
+const ALONE: LiveStats = { online: 1, visitors: 1 };
+
 export async function readLiveStats(): Promise<LiveStats> {
   const since = new Date(Date.now() - ONLINE_WINDOW_MS);
 
-  const [online, visitors] = await Promise.all([
-    prisma.visitor.count({ where: { lastSeenAt: { gte: since } } }),
-    prisma.visitor.count(),
-  ]);
+  /*
+    Esta consulta la hace el layout, así que corre en TODA ruta con idioma
+    — incluidas las que Next prerenderiza al compilar. Si dejáramos que
+    tirara la excepción, una base caída o sin migrar voltearía el build
+    entero por un contador decorativo.
 
-  // Quien está mirando la página cuenta, incluso antes del primer latido.
-  return { online: Math.max(online, 1), visitors: Math.max(visitors, 1) };
+    Y es decorativo de verdad: la píldora es un componente cliente que late
+    apenas monta y pisa este valor en milisegundos. Sirve para el primer
+    pintado y para quien no tiene JavaScript, nada más.
+
+    Devolver ALONE es honesto: si no podemos contar, mostramos lo único que
+    sabemos con certeza — que hay alguien mirando la página.
+  */
+  try {
+    const [online, visitors] = await Promise.all([
+      prisma.visitor.count({ where: { lastSeenAt: { gte: since } } }),
+      prisma.visitor.count(),
+    ]);
+
+    // Quien está mirando la página cuenta, incluso antes del primer latido.
+    return { online: Math.max(online, 1), visitors: Math.max(visitors, 1) };
+  } catch (error) {
+    // Sin ruido en cada build, pero que quede rastro: si el número se
+    // quedó clavado en 1, acá está el motivo.
+    console.warn("[presence] no se pudieron leer los contadores:", error);
+    return ALONE;
+  }
 }
 
 /**
