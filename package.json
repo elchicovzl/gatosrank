@@ -18,6 +18,7 @@
     "check:webhook": "tsx scripts/check-webhook.ts",
     "check:tokens": "tsx scripts/check-tokens.ts",
     "check:env": "tsx scripts/check-env.ts",
+    "check:r2": "tsx scripts/check-r2.ts",
     "check:webhook:polar": "tsx scripts/check-webhook-polar.ts"
   },
   "dependencies": {
