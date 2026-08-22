@@ -1,0 +1,89 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum CatStatus {
+  PENDING
+  LIVE
+  REMOVED
+}
+
+/// Veredicto de moderación automática de imagen.
+/// null = todavía no se corrió.
+enum Moderation {
+  OK
+  REVIEW
+  REJECT
+}
+
+model Cat {
+  id          String      @id @default(cuid())
+  slug        String      @unique
+  name        String
+  imageKey    String
+  ownerHandle String?
+  linkUrl     String?
+  country     String?
+  amountCents Int         @default(0)
+  /// Se sella con el PRIMER pago confirmado. Desempate: el más viejo gana.
+  /// Nullable a propósito: un borrador PENDING todavía no pujó.
+  firstBidAt  DateTime?
+  status      CatStatus   @default(PENDING)
+  moderation  Moderation?
+  clicks      Int         @default(0)
+  createdAt   DateTime    @default(now())
+
+  bids    Bid[]
+  reports Report[]
+
+  /// El tablero siempre se ordena así. No existe columna `rank`.
+  @@index([status, amountCents(sort: Desc), firstBidAt(sort: Asc)])
+}
+
+model Bid {
+  id             String   @id @default(cuid())
+  catId          String
+  /// Lo que se pagó en ESTA transacción (delta).
+  amountCents    Int
+  /// Puja total del gato tras aplicar el pago.
+  resultingCents Int
+  /// Id de la transacción del proveedor de pagos.
+  providerRef    String   @unique
+  createdAt      DateTime @default(now())
+
+  cat Cat @relation(fields: [catId], references: [id], onDelete: Cascade)
+
+  @@index([catId, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+}
+
+model Report {
+  id        String   @id @default(cuid())
+  catId     String
+  reason    String?
+  createdAt DateTime @default(now())
+
+  cat Cat @relation(fields: [catId], references: [id], onDelete: Cascade)
+
+  @@index([catId])
+}
+
+model ProcessedWebhook {
+  eventId     String   @id
+  processedAt DateTime @default(now())
+}
+
+/// Presencia anónima para los contadores en vivo.
+/// Un registro por navegador (id en cookie), sin nada identificable.
+model Visitor {
+  id          String   @id
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+
+  @@index([lastSeenAt])
+}

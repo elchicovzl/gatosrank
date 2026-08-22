@@ -1,26 +1,214 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ---------------------------------------------------------------------------
+   topcats.lol — Catálogo de Exposición Felina
+
+   La paleta sale del logo, muestreada del archivo original:
+     tinta  #101820  (negro frío, azulado)
+     oro    #b89159  (oro cálido de la corona y las estrellas)
+
+   Tinta fría sobre papel cálido es la combinación de imprenta clásica.
+   Todos los pares de texto pasan WCAG AA; los bordes de control llegan
+   a 3:1 sobre el fondo MÁS oscuro de los dos en los que aparecen.
+
+   Un solo tema, comprometido. No hay modo oscuro: el catálogo se imprime.
+--------------------------------------------------------------------------- */
+
+@theme {
+  /* Papel — más claro y menos amarillento que un pergamino */
+  --color-bone: #faf7f0;
+  --color-bone-deep: #efe9dc;
+  --color-paper: #fffdf9;
+
+  /* Tinta — del logo */
+  --color-ink: #101820; /* 16.72:1 sobre hueso */
+  --color-ink-soft: #4a5158; /*  7.52:1 */
+  --color-ink-faint: #5f666f; /*  5.43:1 — texto chico, tiene que pasar AA */
+
+  /* Filetes decorativos (no delimitan controles) */
+  --color-rule: #ddd6c8;
+  --color-rule-soft: #ece6da;
+  /* Borde de control: 3.22:1 sobre hueso */
+  --color-line: #8f8a7e;
+
+  /*
+     Acento: el oro del logo llevado a un ámbar saturado.
+     El matiz se corrió de 35° a 42° a propósito — a 35° es naranja y
+     quedábamos indistinguibles de outbid y creatorbid.
+     Los botones van con texto TINTA encima, no blanco: 9.32:1 en vez de
+     los ~3:1 que usan los clones, y se ve más fuerte.
+  */
+  --color-amber: #f5ae0a;
+  --color-amber-deep: #c78d05;
+  /*
+     Cuando el ámbar tiene que ser TEXTO. Calculado contra `amber-tint`, el
+     fondo más oscuro donde aparece (el precio de la tarjeta seleccionada):
+     4.60:1 ahí, 4.78:1 sobre hueso.
+  */
+  --color-amber-ink: #906604;
+  --color-amber-tint: #fdf2d8;
+
+  /* Errores y acciones destructivas */
+  --color-danger: #c02617; /* 5.56:1 sobre hueso */
+  --color-danger-tint: #fdeceb;
+
+  /* Señal de actividad en vivo */
+  --color-online: #1a7f37;
+  --color-online-dot: #22c55e;
+
+  /* Escarapelas de puesto */
+  --color-gold: #b89159; /* el oro exacto del logo */
+  --color-silver: #95948c;
+  --color-bronze: #a56c41;
+
+  /* Tipografía: serif para los momentos grandes, serif para el cuerpo */
+  --font-display: var(--font-fraunces), Georgia, "Times New Roman", serif;
+  --font-text: var(--font-newsreader), Georgia, "Times New Roman", serif;
+
+  /* Radios: lo que más se leía "anticuado" eran las esquinas rectas */
+  --radius-card: 1rem;
+  --radius-control: 0.75rem;
+
+  /* Elevación suave. Nada de sombras duras. */
+  --shadow-card: 0 1px 2px rgb(16 24 32 / 0.04), 0 16px 36px -24px rgb(16 24 32 / 0.28);
+  --shadow-lift: 0 1px 2px rgb(16 24 32 / 0.1), 0 6px 14px -8px rgb(147 104 4 / 0.4);
+
+  /* Movimiento */
+  --ease-rank: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  body {
+    background-color: var(--color-bone);
+    color: var(--color-ink);
+    font-family: var(--font-text);
+    font-optical-sizing: auto;
+    font-feature-settings: "kern" 1;
+  }
+
+  /* Los montos y los puestos se leen en columna: cifras tabulares siempre. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
+
+  /*
+     Foco visible de verdad. Va en tinta y no en el acento: el ámbar sobre
+     un botón ámbar sería invisible. Así da 16.7:1 sobre papel y 9.3:1
+     incluso encima del botón principal.
+  */
+  :focus-visible {
+    outline: 2px solid var(--color-ink);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  /* Texto tinta sobre ámbar: 9.32:1. Blanco sobre ámbar sería ilegible. */
+  ::selection {
+    background-color: var(--color-amber);
+    color: var(--color-ink);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer components {
+  /*
+     Rótulo de sección. Se reserva para encabezados de bloque — usarlo
+     también en los datos de cada fila era lo que hacía ver todo anticuado.
+  */
+  .label-cat {
+    font-family: var(--font-text);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-ink-faint);
+  }
+
+  /* Datos secundarios de una fila: tiempo, clics, contexto. Sin versalitas. */
+  .meta {
+    font-size: 0.8125rem;
+    line-height: 1.35;
+    color: var(--color-ink-faint);
+  }
+
+  /* El monto se ajusta con los botones −/+; los spinners nativos sobran. */
+  .no-spinner {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+
+  .no-spinner::-webkit-outer-spin-button,
+  .no-spinner::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  /* Filete doble, como los separadores de un catálogo impreso. */
+  .rule-double {
+    border-top: 1px solid var(--color-rule);
+    box-shadow: 0 3px 0 -2px var(--color-rule);
+  }
+
+  /* Marco de la foto: el gato siempre va enmarcado, nunca al aire. */
+  .frame-photo {
+    background-color: var(--color-paper);
+    border: 1px solid var(--color-rule);
+    border-radius: 0.625rem;
+    box-shadow:
+      0 0 0 1px var(--color-paper) inset,
+      0 1px 2px rgb(16 24 32 / 0.06),
+      0 8px 24px -12px rgb(16 24 32 / 0.2);
+  }
+
+  .frame-photo > img {
+    border-radius: 0.375rem;
+  }
+
+  /* Punto de "en línea": late despacio para que se lea como señal viva. */
+  @keyframes pulse-online {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.55;
+      transform: scale(0.82);
+    }
+  }
+
+  .dot-online {
+    animation: pulse-online 2.4s ease-in-out infinite;
+  }
+}
+
+/* Salto de puesto en la previa de /entrar. */
+@keyframes rank-shift {
+  from {
+    transform: translateY(var(--rank-shift-from, 8px));
+    opacity: 0.35;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-rank-shift {
+  animation: rank-shift 420ms var(--ease-rank) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
