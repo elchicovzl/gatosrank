@@ -186,8 +186,27 @@ async function main() {
     "webhook-timestamp": Math.floor(cuando.getTime() / 1000).toString(),
     "webhook-signature": firma,
   };
-  const a = await fetch(`${BASE}/api/webhooks/pagos`, { method: "POST", headers: cabeceras, body: cuerpo }).then((r) => r.json());
-  const bb = await fetch(`${BASE}/api/webhooks/pagos`, { method: "POST", headers: cabeceras, body: cuerpo }).then((r) => r.json());
+  /*
+    Sin `json()` directo: un 400 responde con cuerpo vacío y parsearlo tira
+    SyntaxError, que hace explotar la verificación en vez de reportar el
+    fallo. Un verificador que revienta no informa nada.
+  */
+  const postear = async () => {
+    const r = await fetch(`${BASE}/api/webhooks/pagos`, {
+      method: "POST",
+      headers: cabeceras,
+      body: cuerpo,
+    });
+    const texto = await r.text();
+    try {
+      return JSON.parse(texto) as { result?: string };
+    } catch {
+      return { result: `sin cuerpo (HTTP ${r.status})` };
+    }
+  };
+
+  const a = await postear();
+  const bb = await postear();
   const pujas = await prisma.bid.count({ where: { catId: tres.id } });
   check("primero aplica", a?.result === "applied", `${a?.result}`);
   check("segundo es duplicado", bb?.result === "duplicate", `${bb?.result}`);
