@@ -73,16 +73,27 @@ for (const v of VARIABLES) {
 
 console.log("\nQué resolvió la app\n");
 
-const proveedor = process.env.PAYMENTS_PROVIDER === "polar" ? "polar" : "mock";
+/*
+  El mismo criterio que `activeProviderId()` en lib/payments-core.ts:
+  cualquier valor desconocido cae en "mock". Si se agrega un proveedor allá
+  y no acá, este resumen informa mal — y una verificación que miente es
+  peor que no tenerla.
+*/
+const PROVEEDORES = ["polar", "paypal", "mock"] as const;
+type Proveedor = (typeof PROVEEDORES)[number];
+
+const configurado = process.env.PAYMENTS_PROVIDER ?? "";
+const proveedor: Proveedor = PROVEEDORES.includes(configurado as Proveedor)
+  ? (configurado as Proveedor)
+  : "mock";
+
 console.log(`  Pagos:      ${proveedor}`);
+
 if (proveedor === "mock") {
   console.log("              ⚠ Los pagos son SIMULADOS. Nadie cobra nada.");
-  if (process.env.POLAR_ACCESS_TOKEN?.trim()) {
-    problemas.push(
-      'Hay credenciales de Polar pero PAYMENTS_PROVIDER no es "polar"',
-    );
-  }
-} else {
+}
+
+if (proveedor === "polar") {
   for (const v of ["POLAR_ACCESS_TOKEN", "POLAR_PRODUCT_ID"]) {
     if (!process.env[v]?.trim()) problemas.push(`${v} hace falta con Polar`);
   }
@@ -92,6 +103,30 @@ if (proveedor === "mock") {
     );
     console.log("                el pago se cobra y el puesto no se otorga.");
   }
+}
+
+if (proveedor === "paypal") {
+  console.log(
+    `              entorno: ${process.env.PAYPAL_ENV === "live" ? "live" : "sandbox"}`,
+  );
+}
+
+/*
+  Credenciales de un proveedor que no está activo. No es un problema —
+  quedan del proveedor anterior— pero conviene verlo: si algo no cobra,
+  lo primero que uno sospecha es que quedó apuntando al lugar viejo.
+*/
+const dormidos: string[] = [];
+if (proveedor !== "polar" && process.env.POLAR_ACCESS_TOKEN?.trim()) {
+  dormidos.push("Polar");
+}
+if (proveedor !== "paypal" && process.env.PAYPAL_CLIENT_ID?.trim()) {
+  dormidos.push("PayPal");
+}
+if (dormidos.length) {
+  console.log(
+    `              · hay credenciales sin usar de ${dormidos.join(" y ")}`,
+  );
 }
 
 const moderacion = process.env.MODERATION_PROVIDER ?? "review";

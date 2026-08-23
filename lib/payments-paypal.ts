@@ -1,5 +1,7 @@
 import "server-only";
 
+import { createVerify } from "node:crypto";
+
 import {
   ACK,
   INVALID,
@@ -171,69 +173,116 @@ function unpackCustomId(
    Verificación de firma
    ------------------------------------------------------------------------- */
 
-interface VerifyResponse {
-  verification_status: "SUCCESS" | "FAILURE";
+/** PayPal sólo firma con este algoritmo. Cualquier otro se rechaza. */
+const ALGORITMO = "SHA256withRSA";
+
+/**
+ * Tabla CRC32 estándar. PayPal firma sobre el checksum del cuerpo crudo,
+ * y Node no trae CRC32.
+ */
+const TABLA_CRC = (() => {
+  const tabla = new Uint32Array(256);
+  for (let i = 0; i < 256; i += 1) {
+    let c = i;
+    for (let k = 0; k < 8; k += 1) {
+      c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    }
+    tabla[i] = c >>> 0;
+  }
+  return tabla;
+})();
+
+function crc32(buf: Buffer): number {
+  let c = 0xffffffff;
+  for (const byte of buf) c = TABLA_CRC[(c ^ byte) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
 }
 
 /**
- * Verificación por postback contra PayPal.
+ * El certificado tiene que venir de PayPal y de nadie más.
  *
- * Existe también un método local (CRC32 del cuerpo + RSA contra el
- * certificado de `paypal-cert-url`). NO se usa a propósito: obliga a
- * validar a mano que esa URL sea de PayPal, y la documentación no lo
- * advierte. Si no se valida, cualquiera manda un webhook falso apuntando
- * el certificado a su propio servidor, lo firma con su clave, y se lleva
- * el puesto #1 gratis. Acá la criptografía la hace PayPal.
+ * ESTA es la validación que la documentación de PayPal NO menciona, y sin
+ * ella el método local no vale nada: quien quiera un puesto gratis manda
+ * un webhook apuntando `paypal-cert-url` a su propio servidor, lo firma
+ * con su clave, y la verificación da bien.
  *
- * El costo es una llamada extra por webhook. Es barato al lado de que el
- * endpoint que reparte puestos pagos acepte firmas fabricadas.
+ * `endsWith(".paypal.com")` deja afuera a `evil-paypal.com`, que termina
+ * en "-paypal.com" y no en ".paypal.com".
  */
-async function firmaValida(
-  rawBody: string,
-  headers: Headers,
-): Promise<boolean> {
-  const requeridas = [
-    "paypal-transmission-id",
-    "paypal-transmission-time",
-    "paypal-transmission-sig",
-    "paypal-cert-url",
-    "paypal-auth-algo",
-  ];
-
-  const h: Record<string, string> = {};
-  for (const nombre of requeridas) {
-    const valor = headers.get(nombre);
-    if (!valor) return false;
-    h[nombre] = valor;
+function certUrlConfiable(raw: string): URL | null {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
   }
+  if (url.protocol !== "https:") return null;
+  const host = url.hostname.toLowerCase();
+  if (host !== "paypal.com" && !host.endsWith(".paypal.com")) return null;
+  return url;
+}
+
+/** Los certificados rotan poco: se cachean por URL. */
+const certificados = new Map<string, string>();
+
+async function certificado(url: URL): Promise<string> {
+  const cacheado = certificados.get(url.href);
+  if (cacheado) return cacheado;
+
+  const res = await fetch(url.href);
+  if (!res.ok) throw new Error(`No se pudo bajar el certificado (${res.status})`);
+
+  const pem = await res.text();
+  certificados.set(url.href, pem);
+  return pem;
+}
+
+/**
+ * Verificación LOCAL de la firma.
+ *
+ * Existe un método por postback contra PayPal
+ * (/v1/notifications/verify-webhook-signature) y era el que estaba acá
+ * antes. Se descartó con evidencia: en SANDBOX devuelve
+ * `{"verification_status":"SUCCESS"}` ante una firma inventada, un
+ * transmission id inventado y un cert_url inexistente. O sea que sella
+ * cualquier falsificación y, peor, hace imposible probar que rechazamos
+ * las falsas — el test daría verde siempre.
+ *
+ * Acá la cuenta la hacemos nosotros, así que se puede probar de verdad:
+ * cert_url ajeno, cuerpo alterado y firma inventada se rechazan de forma
+ * determinista, sin depender de que el proveedor opine bien.
+ */
+async function firmaValida(rawBody: string, headers: Headers): Promise<boolean> {
+  const transmissionId = headers.get("paypal-transmission-id");
+  const transmissionTime = headers.get("paypal-transmission-time");
+  const firma = headers.get("paypal-transmission-sig");
+  const certUrlRaw = headers.get("paypal-cert-url");
+  const algoritmo = headers.get("paypal-auth-algo");
+
+  if (!transmissionId || !transmissionTime || !firma || !certUrlRaw) return false;
+  if (algoritmo !== ALGORITMO) return false;
+
+  const certUrl = certUrlConfiable(certUrlRaw);
+  if (!certUrl) return false;
 
   /*
-    El cuerpo se inyecta CRUDO por concatenación de cadenas. PayPal avisa:
-    "It is essential that the webhook_event data be posted back exactly as
-    it was received, with no deviations in formatting or content of any
-    kind." Armar este objeto con JSON.stringify reserializaría el evento
-    —cambiando espacios, orden de claves o escapes— y la verificación
-    fallaría de formas difíciles de diagnosticar.
+    Sobre el cuerpo CRUDO. PayPal avisa: "You must use the original raw
+    body to calculate this; do not parse the body to an array/object and
+    then re-stringify it." Reserializar cambia espacios o escapes y el
+    checksum deja de coincidir.
   */
-  const cuerpo =
-    "{" +
-    [
-      `"transmission_id":${JSON.stringify(h["paypal-transmission-id"])}`,
-      `"transmission_time":${JSON.stringify(h["paypal-transmission-time"])}`,
-      `"cert_url":${JSON.stringify(h["paypal-cert-url"])}`,
-      `"auth_algo":${JSON.stringify(h["paypal-auth-algo"])}`,
-      `"transmission_sig":${JSON.stringify(h["paypal-transmission-sig"])}`,
-      `"webhook_id":${JSON.stringify(requireEnv("PAYPAL_WEBHOOK_ID"))}`,
-      `"webhook_event":${rawBody}`,
-    ].join(",") +
-    "}";
+  const checksum = crc32(Buffer.from(rawBody, "utf-8"));
+  const mensaje = `${transmissionId}|${transmissionTime}|${requireEnv("PAYPAL_WEBHOOK_ID")}|${checksum}`;
 
-  const data = await api<VerifyResponse>(
-    "/v1/notifications/verify-webhook-signature",
-    { method: "POST", body: cuerpo },
-  );
-
-  return data.verification_status === "SUCCESS";
+  try {
+    const verificador = createVerify("sha256WithRSAEncryption");
+    verificador.update(mensaje, "utf-8");
+    verificador.end();
+    return verificador.verify(await certificado(certUrl), firma, "base64");
+  } catch {
+    // Certificado ilegible o firma mal formada: no valida, y punto.
+    return false;
+  }
 }
 
 /* -------------------------------------------------------------------------
