@@ -1,39 +1,25 @@
 /**
- * ⚠️ EL EVENTO FIRMADO DE ACÁ ESTÁ DESACTUALIZADO CONTRA EL SDK.
+ * Verifica el webhook REAL de Polar sin depender de que Polar nos alcance.
  *
- * El SDK valida el esquema del cuerpo DESPUÉS de verificar la firma, y hoy
- * exige campos que este payload sintético no tiene (`applied_balance_amount`,
- * `billing_name`, `description`, `due_amount`, `invoice_number`,
- * `is_invoice_generated`, `platform_fee_amount`, `platform_fee_currency`,
- * `receipt_number`, y más dentro de `customer`). El error no es de
- * verificación, así que se relanza y sale un 500 con firma VÁLIDA.
- *
- * Si esta verificación falla con 500, lo primero a mirar es este payload
- * — no producción. Ya nos costó un rato de diagnóstico.
- *
- * Mantener a mano una copia del esquema de Polar es una cinta de correr. La
- * solución es reemplazar `eventoOrderPaid` por un CUERPO REAL capturado de
- * la pestaña Deliveries del webhook en Polar, y que el script sólo lo
- * refirme con nuestro secreto. Fixture sacado de la realidad, no inventado.
- *
- * Lo que SÍ sigue sirviendo hoy: el bloque de firma inválida, que verifica
- * que un evento falsificado se rechaza con 400 y no otorga ningún puesto.
- *
- * Verifica el webhook REAL de Polar sin necesidad de un túnel.
- *
- * Firma un evento `order.paid` con el mismo secreto y el mismo estándar que
- * usa Polar, y lo manda al endpoint local. Así se ejercita el camino que de
- * verdad importa — validación de firma incluida — sin exponer nada a
- * internet y sin esperar a tener dominio.
- *
- * Lo que ESTO no prueba: que Polar pueda alcanzarte. Eso necesita un túnel
- * o un despliegue; para eso está `pnpm tunnel`.
- *
- *   pnpm dev              # en otra terminal, con PAYMENTS_PROVIDER=polar
  *   pnpm check:webhook:polar
+ *   NEXT_PUBLIC_SITE_URL=https://topcats.lol pnpm check:webhook:polar
+ *
+ * El cuerpo NO se inventa: sale de `fixtures/polar-order-paid.json`, que es
+ * una entrega real capturada de la pestaña Deliveries de Polar (con los
+ * datos personales reemplazados). El script sólo lo refirma con nuestro
+ * secreto y le cambia el gato y el monto.
+ *
+ * Esto importa: el SDK valida el esquema del cuerpo DESPUÉS de verificar la
+ * firma, y un campo faltante tira un error que no es de verificación — se
+ * relanza y sale un 500 con firma VÁLIDA. Mantener a mano una copia del
+ * esquema ajeno es una cinta de correr que además da falsas alarmas: ya nos
+ * hizo creer que producción estaba rota. Si Polar cambia el esquema, se
+ * captura una entrega nueva y se reemplaza el fixture.
  */
 import "dotenv/config";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Webhook } from "standardwebhooks";
@@ -63,70 +49,37 @@ function firmar(secret: string, id: string, cuerpo: string, cuando: Date) {
   return wh.sign(id, cuando, cuerpo);
 }
 
+const FIXTURE = JSON.parse(
+  readFileSync(
+    path.join(process.cwd(), "scripts", "fixtures", "polar-order-paid.json"),
+    "utf-8",
+  ),
+) as { data: Record<string, unknown> };
+
+/**
+ * Toma la entrega real y le cambia sólo lo que este script necesita: a qué
+ * gato apunta, cuánto sale y un id de orden distinto por corrida. Todo lo
+ * demás queda tal cual llegó de Polar, que es el punto.
+ */
 function eventoOrderPaid(catDraftId: string, resultingCents: number) {
-  return {
-    type: "order.paid",
-    timestamp: new Date().toISOString(),
-    data: {
-      id: `order_${randomUUID()}`,
-      created_at: new Date().toISOString(),
-      modified_at: null,
-      status: "paid",
-      paid: true,
-      subtotal_amount: resultingCents,
-      discount_amount: 0,
-      net_amount: resultingCents,
-      tax_amount: 0,
-      total_amount: resultingCents,
-      refunded_amount: 0,
-      refunded_tax_amount: 0,
-      /*
-        El SDK valida el esquema del cuerpo DESPUÉS de verificar la firma, y
-        un campo faltante tira un error que no es de verificación: se relanza
-        y sale un 500. Si esta verificación empieza a dar 500 con firma
-        válida, lo primero a mirar es si el SDK sumó campos obligatorios,
-        no si producción está rota.
-      */
-      refundable_amount: resultingCents,
-      refundable_tax_amount: 0,
-      currency: "usd",
-      billing_reason: "purchase",
-      billing_address: null,
-      customer_id: `cus_${randomUUID()}`,
-      product_id: process.env.POLAR_PRODUCT_ID ?? "prod_x",
-      discount_id: null,
-      subscription_id: null,
-      checkout_id: `chk_${randomUUID()}`,
-      metadata: { catDraftId, resultingCents },
-      custom_field_data: {},
-      customer: {
-        id: `cus_${randomUUID()}`,
-        created_at: new Date().toISOString(),
-        modified_at: null,
-        metadata: {},
-        external_id: null,
-        email: "prueba@example.com",
-        email_verified: true,
-        name: null,
-        billing_address: null,
-        tax_id: null,
-        organization_id: `org_${randomUUID()}`,
-        deleted_at: null,
-        avatar_url: "",
-      },
-      product: null,
-      discount: null,
-      subscription: null,
-      items: [],
-    },
-  };
+  const copia = structuredClone(FIXTURE);
+  Object.assign(copia.data, {
+    id: randomUUID(),
+    subtotal_amount: resultingCents,
+    total_amount: resultingCents,
+    due_amount: resultingCents,
+    metadata: { catDraftId, resultingCents },
+  });
+  return copia;
 }
 
 /*
-  Ids emitidos por este script, para poder borrarlos al final. NO se puede
-  limpiar por prefijo: `msg_` es el formato de Standard Webhooks y los
-  eventos reales de Polar lo usan también, así que un `startsWith` se
-  llevaría puesto el libro de pagos de verdad.
+  Ids emitidos por este script, para poder borrarlos al final sin tocar el
+  libro de pagos real. Se borra por id exacto y no por prefijo a propósito:
+  Polar manda como `webhook-id` un UUID pelado —verificado contra una
+  entrega real: `9e886ab6-4922-4899-a5c4-fd518af53798`— así que cualquier
+  heurística de prefijo depende de un formato ajeno que puede cambiar.
+  La lista exacta no depende de nada.
 */
 const IDS_EMITIDOS: string[] = [];
 
