@@ -7,6 +7,9 @@ import {
 } from "@polar-sh/sdk/webhooks.js";
 
 import {
+  ACK,
+  INVALID,
+  paymentOutcome,
   PROVIDERS,
   siteUrl,
   type PaymentEvent,
@@ -71,7 +74,7 @@ export const polarProvider: PaymentProvider = {
 
   async verifyWebhook(request) {
     const secret = process.env.POLAR_WEBHOOK_SECRET;
-    if (!secret) return null;
+    if (!secret) return INVALID;
 
     /**
      * La firma se calcula sobre el cuerpo CRUDO. Parsear antes de verificar
@@ -87,22 +90,26 @@ export const polarProvider: PaymentProvider = {
     try {
       event = validateEvent(body, headers, secret);
     } catch (error) {
-      if (error instanceof WebhookVerificationError) return null;
+      if (error instanceof WebhookVerificationError) return INVALID;
       throw error;
     }
 
-    // Solo interesa el pago efectivamente cobrado.
-    if (event.type !== "order.paid") return null;
+    /*
+      La firma ya validó: de acá en adelante el evento es legítimo aunque
+      no nos sirva, así que se responde `ack` y no `invalid`. Un 400 le
+      diría al proveedor que reintente algo que nunca vamos a aceptar.
+    */
+    if (event.type !== "order.paid") return ACK;
 
     const order = event.data;
-    if (!order.paid) return null;
+    if (!order.paid) return ACK;
 
     const metadata = order.metadata ?? {};
     const catDraftId = metadata.catDraftId;
     const resultingCents = Number(metadata.resultingCents);
 
     if (typeof catDraftId !== "string" || !Number.isInteger(resultingCents)) {
-      return null;
+      return ACK;
     }
 
     /**
@@ -120,6 +127,6 @@ export const polarProvider: PaymentProvider = {
       resultingCents,
     };
 
-    return payment;
+    return paymentOutcome(payment);
   },
 };

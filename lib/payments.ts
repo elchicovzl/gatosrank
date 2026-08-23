@@ -2,6 +2,7 @@ import "server-only";
 
 import { activeProviderId, PROVIDERS, type PaymentProvider } from "@/lib/payments-core";
 import { mockProvider } from "@/lib/payments-mock";
+import { paypalProvider } from "@/lib/payments-paypal";
 import { polarProvider } from "@/lib/payments-polar";
 
 /**
@@ -20,8 +21,15 @@ export {
   type PaymentEvent,
   type PaymentProvider,
   type ProviderId,
+  type WebhookOutcome,
 } from "@/lib/payments-core";
 
+const REGISTRO: Record<string, PaymentProvider> = {
+  [PROVIDERS.POLAR]: polarProvider,
+  [PROVIDERS.PAYPAL]: paypalProvider,
+  [PROVIDERS.MOCK]: mockProvider,
+};
+
 export function payments(): PaymentProvider {
-  return activeProviderId() === PROVIDERS.POLAR ? polarProvider : mockProvider;
+  return REGISTRO[activeProviderId()] ?? mockProvider;
 }

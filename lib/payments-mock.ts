@@ -1,6 +1,12 @@
 import "server-only";
 
-import { PROVIDERS, siteUrl, type PaymentProvider } from "@/lib/payments-core";
+import {
+  INVALID,
+  paymentOutcome,
+  PROVIDERS,
+  siteUrl,
+  type PaymentProvider,
+} from "@/lib/payments-core";
 import { localePath } from "@/lib/i18n/config";
 
 /**
@@ -22,7 +28,7 @@ export const mockProvider: PaymentProvider = {
 
   async verifyWebhook(request) {
     const body = await request.json().catch(() => null);
-    if (!body || typeof body !== "object") return null;
+    if (!body || typeof body !== "object") return INVALID;
 
     const data = body as Record<string, unknown>;
     if (
@@ -32,15 +38,15 @@ export const mockProvider: PaymentProvider = {
       typeof data.amountCents !== "number" ||
       typeof data.resultingCents !== "number"
     ) {
-      return null;
+      return INVALID;
     }
 
-    return {
+    return paymentOutcome({
       eventId: data.eventId,
       providerRef: data.providerRef,
       catDraftId: data.catDraftId,
       amountCents: data.amountCents,
       resultingCents: data.resultingCents,
-    };
+    });
   },
 };

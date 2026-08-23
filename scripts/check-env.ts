@@ -29,6 +29,10 @@ const VARIABLES: Variable[] = [
   { nombre: "POLAR_ACCESS_TOKEN", nivel: "produccion" },
   { nombre: "POLAR_PRODUCT_ID", nivel: "produccion" },
   { nombre: "POLAR_WEBHOOK_SECRET", nivel: "produccion" },
+  { nombre: "PAYPAL_CLIENT_ID", nivel: "opcional" },
+  { nombre: "PAYPAL_SECRET", nivel: "opcional" },
+  { nombre: "PAYPAL_WEBHOOK_ID", nivel: "opcional" },
+  { nombre: "PAYPAL_ENV", nivel: "opcional", publica: true },
   { nombre: "R2_ACCOUNT_ID", nivel: "produccion" },
   { nombre: "R2_ACCESS_KEY_ID", nivel: "produccion" },
   { nombre: "R2_SECRET_ACCESS_KEY", nivel: "produccion" },
@@ -136,6 +140,19 @@ if (publicUrl) {
       "R2_PUBLIC_URL usa un dominio con CDN y faltan CLOUDFLARE_ZONE_ID/" +
         "CLOUDFLARE_API_TOKEN: borrar una foto no la saca del caché de borde",
     );
+  }
+}
+
+/*
+  Con PayPal el puesto lo otorga PAYMENT.CAPTURE.COMPLETED, y la firma se
+  verifica contra el id del webhook: sin PAYPAL_WEBHOOK_ID la verificación
+  no puede correr y se rechaza TODO, incluidos los pagos legítimos.
+*/
+if (process.env.PAYMENTS_PROVIDER === "paypal") {
+  for (const n of ["PAYPAL_CLIENT_ID", "PAYPAL_SECRET", "PAYPAL_WEBHOOK_ID"]) {
+    if (!process.env[n]?.trim()) {
+      problemas.push(`PAYMENTS_PROVIDER es "paypal" y falta ${n}`);
+    }
   }
 }
 

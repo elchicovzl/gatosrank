@@ -8,12 +8,20 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  const event = await payments().verifyWebhook(request);
+  const outcome = await payments().verifyWebhook(request);
 
-  // Firma inválida o evento que no nos interesa.
-  if (!event) return new NextResponse(null, { status: 400 });
+  // Sólo la firma inválida merece un 400.
+  if (outcome.kind === "invalid") return new NextResponse(null, { status: 400 });
 
-  const result = await applyPayment(event);
+  /*
+    Evento legítimo que no otorga nada. Responde 200 a propósito: los
+    proveedores reintentan ante cualquier respuesta que no sea 2xx —PayPal
+    hasta 25 veces durante 3 días— y no tiene sentido que reintenten algo
+    que ya procesamos o que nunca vamos a aceptar.
+  */
+  if (outcome.kind === "ack") return NextResponse.json({ result: "ack" });
+
+  const result = await applyPayment(outcome.event);
 
   if (result === PAYMENT_RESULTS.UNKNOWN_CAT) {
     return NextResponse.json({ result }, { status: 404 });
