@@ -93,9 +93,23 @@ function eventoOrderPaid(catDraftId: string, resultingCents: number) {
   };
 }
 
+/*
+  Ids emitidos por este script, para poder borrarlos al final. NO se puede
+  limpiar por prefijo: `msg_` es el formato de Standard Webhooks y los
+  eventos reales de Polar lo usan también, así que un `startsWith` se
+  llevaría puesto el libro de pagos de verdad.
+*/
+const IDS_EMITIDOS: string[] = [];
+
+function nuevoId(): string {
+  const id = `msg_${randomUUID()}`;
+  IDS_EMITIDOS.push(id);
+  return id;
+}
+
 async function enviar(evento: unknown, opciones?: { romperFirma?: boolean }) {
   const cuerpo = JSON.stringify(evento);
-  const id = `msg_${randomUUID()}`;
+  const id = nuevoId();
   const cuando = new Date();
   let firma = firmar(SECRET!, id, cuerpo, cuando);
   if (opciones?.romperFirma) firma = firma.slice(0, -4) + "xxxx";
@@ -163,7 +177,7 @@ async function main() {
   const tres = await borrador("PolarRepetido");
   const evento = eventoOrderPaid(tres.id, 800);
   const cuerpo = JSON.stringify(evento);
-  const id = `msg_${randomUUID()}`;
+  const id = nuevoId();
   const cuando = new Date();
   const firma = firmar(SECRET, id, cuerpo, cuando);
   const cabeceras = {
@@ -180,6 +194,9 @@ async function main() {
   check("una sola puja", pujas === 1, `pujas: ${pujas}`);
 
   await prisma.cat.deleteMany({ where: { slug: { startsWith: "polar-" } } });
+  await prisma.processedWebhook.deleteMany({
+    where: { eventId: { in: IDS_EMITIDOS } },
+  });
   console.log(`\n${fallan === 0 ? "TODO OK — el webhook de Polar está bien cableado" : `${fallan} FALLAN`}`);
   await prisma.$disconnect();
   process.exit(fallan === 0 ? 0 : 1);
