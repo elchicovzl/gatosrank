@@ -139,6 +139,8 @@ export const en: Dictionary = {
     step1ErrorType: "That file isn't an image. We take jpg, png, webp and heic.",
     step1ErrorSize: "The photo is over 8 MB. Shrink it and try again.",
     step1ErrorFailed: "Couldn't upload the photo. Try again.",
+    step1Rejected:
+      "That photo didn't pass the content check. Try another one — you haven't been charged.",
 
     step2Label: "Step 2",
     step2Title: "What's its name?",

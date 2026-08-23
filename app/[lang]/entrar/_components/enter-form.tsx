@@ -32,6 +32,7 @@ function errorMessages(copy: Dictionary): Record<string, string> {
   return {
     name: copy.enter.step2NameRequired,
     image: copy.enter.step1ErrorFailed,
+    image_rejected: copy.enter.step1Rejected,
     handle: copy.enter.step2HandleInvalid,
     handle_reserved: copy.enter.step2HandleReserved,
     link_invalid: copy.enter.step3UrlInvalid,

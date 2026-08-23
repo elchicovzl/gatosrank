@@ -139,6 +139,22 @@ if (publicUrl) {
   }
 }
 
+/*
+  Tener las credenciales cargadas no activa nada: el proveedor lo elige
+  MODERATION_PROVIDER. Con "permissive" ni se llama a Sightengine y todo lo
+  pagado se publica sin mirar, aunque las claves estén ahí.
+*/
+if (
+  process.env.SIGHTENGINE_USER?.trim() &&
+  process.env.SIGHTENGINE_SECRET?.trim() &&
+  process.env.MODERATION_PROVIDER !== "sightengine"
+) {
+  problemas.push(
+    `hay credenciales de Sightengine pero MODERATION_PROVIDER es "${moderacion}": ` +
+      "el control automático no corre",
+  );
+}
+
 if (process.env.ADMIN_TOKEN?.trim() === "dev-token-cambiame") {
   problemas.push("ADMIN_TOKEN sigue siendo el de ejemplo");
 }

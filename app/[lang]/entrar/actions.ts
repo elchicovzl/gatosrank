@@ -124,6 +124,21 @@ export async function startCheckout(
     select: { id: true },
   });
 
+  /*
+    Un REJECT no se publica ni pagando: `applyPayment` lo deja en PENDING.
+    Así que mandarlo al checkout sería cobrarle por algo que nunca va a
+    recibir, y las reglas dicen que la puja no se devuelve. Eso no es sólo
+    injusto: genera disputas y contracargos, que es exactamente lo que
+    pone en riesgo la cuenta del proveedor de pagos — el mismo riesgo que
+    la regla del REJECT intenta evitar.
+
+    El borrador sí queda creado, con su veredicto: /admin lo muestra en
+    "Bloqueados por el control" y deja ver qué se intentó subir.
+  */
+  if (verdict === VERDICTS.REJECT) {
+    return { ok: false, error: "image_rejected" };
+  }
+
   try {
     const checkout = await payments().createCheckout({
       catDraftId: draft.id,

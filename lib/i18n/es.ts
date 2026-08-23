@@ -141,6 +141,8 @@ export const es = {
       "Ese archivo no es una imagen. Aceptamos jpg, png, webp y heic.",
     step1ErrorSize: "La foto pesa más de 8 MB. Bajá el tamaño y volvé a intentar.",
     step1ErrorFailed: "No se pudo subir la foto. Volvé a intentar.",
+    step1Rejected:
+      "Esa foto no pasó el control de contenido. Probá con otra — no te cobramos nada.",
 
     step2Label: "Paso 2",
     step2Title: "¿Cómo se llama?",
