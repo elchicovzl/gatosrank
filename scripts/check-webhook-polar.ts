@@ -1,4 +1,24 @@
 /**
+ * ⚠️ EL EVENTO FIRMADO DE ACÁ ESTÁ DESACTUALIZADO CONTRA EL SDK.
+ *
+ * El SDK valida el esquema del cuerpo DESPUÉS de verificar la firma, y hoy
+ * exige campos que este payload sintético no tiene (`applied_balance_amount`,
+ * `billing_name`, `description`, `due_amount`, `invoice_number`,
+ * `is_invoice_generated`, `platform_fee_amount`, `platform_fee_currency`,
+ * `receipt_number`, y más dentro de `customer`). El error no es de
+ * verificación, así que se relanza y sale un 500 con firma VÁLIDA.
+ *
+ * Si esta verificación falla con 500, lo primero a mirar es este payload
+ * — no producción. Ya nos costó un rato de diagnóstico.
+ *
+ * Mantener a mano una copia del esquema de Polar es una cinta de correr. La
+ * solución es reemplazar `eventoOrderPaid` por un CUERPO REAL capturado de
+ * la pestaña Deliveries del webhook en Polar, y que el script sólo lo
+ * refirme con nuestro secreto. Fixture sacado de la realidad, no inventado.
+ *
+ * Lo que SÍ sigue sirviendo hoy: el bloque de firma inválida, que verifica
+ * que un evento falsificado se rechaza con 400 y no otorga ningún puesto.
+ *
  * Verifica el webhook REAL de Polar sin necesidad de un túnel.
  *
  * Firma un evento `order.paid` con el mismo secreto y el mismo estándar que
@@ -60,6 +80,15 @@ function eventoOrderPaid(catDraftId: string, resultingCents: number) {
       total_amount: resultingCents,
       refunded_amount: 0,
       refunded_tax_amount: 0,
+      /*
+        El SDK valida el esquema del cuerpo DESPUÉS de verificar la firma, y
+        un campo faltante tira un error que no es de verificación: se relanza
+        y sale un 500. Si esta verificación empieza a dar 500 con firma
+        válida, lo primero a mirar es si el SDK sumó campos obligatorios,
+        no si producción está rota.
+      */
+      refundable_amount: resultingCents,
+      refundable_tax_amount: 0,
       currency: "usd",
       billing_reason: "purchase",
       billing_address: null,
@@ -158,7 +187,13 @@ async function main() {
     where: { id: uno.id },
     select: { amountCents: true, status: true },
   });
-  check("acepta el evento", r1.body?.result === "applied", `respuesta: ${r1.body?.result}`);
+  /* El estado va en el mensaje: 400 es firma rechazada, 500 es que pasó
+     la firma y reventó después. Sin ese número el diagnóstico es a ciegas. */
+  check(
+    "acepta el evento",
+    r1.body?.result === "applied",
+    `HTTP ${r1.status} · respuesta: ${r1.body?.result ?? "(sin cuerpo)"}`,
+  );
   check("aplica el monto", tras.amountCents === 1500, `monto: ${tras.amountCents}`);
   check("publica el ejemplar", tras.status === "LIVE", `estado: ${tras.status}`);
 
