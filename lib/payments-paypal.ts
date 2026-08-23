@@ -284,6 +284,24 @@ export const paypalProvider: PaymentProvider = {
             custom_id: packCustomId(catDraftId, resultingCents),
           },
         ],
+        /*
+          PRIMERO A COMPROBAR EN SANDBOX, antes que cualquier otra cosa:
+          ¿esta orden le ofrece pagar con TARJETA a quien no tiene cuenta
+          de PayPal, o lo manda derecho al muro de login?
+
+          Fijar `payment_source.paypal` puede estar restringiendo el pago a
+          la billetera. La documentación del API no expone los valores de
+          `landing_page` ni explica la diferencia contra omitir
+          `payment_source`, así que no se toca a ciegas: se prueba, se mira
+          qué pantalla aparece, y recién ahí se ajusta.
+
+          Importa más que el resto de la integración. El producto es una
+          compra por impulso: si le pedimos cuenta a quien sólo quería
+          poner su gato en el #1, lo perdimos. Y ojo: aunque esto quede
+          bien, PayPal decide por comprador si muestra el pago como
+          invitado —según historial, cookies, ubicación y riesgo— así que
+          hay que tener "PayPal Account Optional" prendido en la cuenta.
+        */
         payment_source: {
           paypal: {
             experience_context: {
